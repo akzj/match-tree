@@ -64,10 +64,14 @@ func (node *Node) mathUniq(tokens []string, set map[string][]interface{}) {
 		}
 		return
 	}
-	for _, token := range []string{tokens[0], "*", "#"} {
-		if next := node.findNext(token); next != nil {
-			next.mathUniq(tokens[1:], set)
-		}
+	if next := node.findNext(tokens[0]); next != nil {
+		next.mathUniq(tokens[1:], set)
+	}
+	if next := node.findNext("*"); next != nil {
+		next.mathUniq(tokens[1:], set)
+	}
+	if next := node.findNext("#"); next != nil {
+		next.mathUniq(tokens[1:], set)
 	}
 	if node.token == "#" {
 		if node.nextEmpty() {
@@ -155,4 +159,8 @@ func (tree *MatchTree) MatchUniq(key string) []interface{} {
 		objs = append(objs, values...)
 	}
 	return objs
+}
+
+func (tree *MatchTree) MatchTokenUniq(tokens []string, set map[string][]interface{}) {
+	tree.root.mathUniq(tokens, set)
 }

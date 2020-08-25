@@ -127,7 +127,7 @@ func TestMatchTree2(t *testing.T) {
 
 	key := "c.c.c.c.5"
 	begin := time.Now()
-	count := 10000
+	count := 1000000
 	for i := 0; i < count; i++ {
 		objs := tree.MatchUniq(key)
 		if objs == nil {
@@ -138,8 +138,17 @@ func TestMatchTree2(t *testing.T) {
 		}
 	}
 	fmt.Println(float64(count) / time.Now().Sub(begin).Seconds())
-	fmt.Println("use seconds", time.Now().Sub(begin).Seconds())
+	fmt.Println("MatchUniq use seconds", time.Now().Sub(begin).Seconds())
 
+	begin = time.Now()
+	tokens := tree.split(key)
+	var result = make(map[string][]interface{}, 100)
+	for i := 0; i < count; i++ {
+		tree.MatchTokenUniq(tokens, result)
+	}
+	fmt.Println(float64(count) / time.Now().Sub(begin).Seconds())
+	fmt.Println("MatchTokenUniq use seconds", time.Now().Sub(begin).Seconds())
+	return
 	begin = time.Now()
 	for i := 0; i < count; i++ {
 		var objs []interface{}
@@ -171,4 +180,35 @@ func TestMatchTree_MatchUniq(t *testing.T) {
 	} else {
 		fmt.Println(res)
 	}
+}
+
+func BenchmarkMatchTree_MatchTokenUniq(b *testing.B) {
+	rand.Seed(time.Now().Unix())
+	tree := NewMatchTree()
+	for i := 0; i < 2000; i++ {
+		var key string
+		for i := 0; i < 5; i++ {
+			if len(key) != 0 {
+				key += "."
+			}
+			if rand.Int31n(100) == 1 {
+				key += "#"
+			} else {
+				str := uuid.New().String()[:1]
+				key += str
+			}
+		}
+		tree.Insert(key, i)
+	}
+
+	key := "c.c.c.c.5"
+	begin := time.Now()
+	var result = make(map[string][]interface{}, 100)
+	tokens := tree.split(key)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tree.MatchTokenUniq(tokens,result)
+	}
+	fmt.Println(int(float64(b.N) / time.Now().Sub(begin).Seconds()))
 }
