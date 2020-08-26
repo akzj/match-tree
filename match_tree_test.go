@@ -182,6 +182,20 @@ func TestMatchTree_MatchUniq(t *testing.T) {
 	}
 }
 
+func TestMatchTree_MatchUniq2(t *testing.T) {
+	tree := NewMatchTree()
+
+	tree.Insert("1.2.3.4.5", 1)
+	tree.Insert("#.1.#.5.#", 2)
+
+	res := tree.MatchUniq("1.2.3.4.5")
+	if len(res) == 0 {
+		t.Fatalf("failed")
+	} else {
+		fmt.Println(res)
+	}
+}
+
 func BenchmarkMatchTree_MatchTokenUniq(b *testing.B) {
 	rand.Seed(time.Now().Unix())
 	tree := NewMatchTree()

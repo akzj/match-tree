@@ -1,6 +1,7 @@
 package match_tree
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -49,7 +50,7 @@ func (node *Node) insert(tokens []string, prefix string, value interface{}) {
 }
 
 func (node *Node) mathUniq(tokens []string, set map[string][]interface{}) {
-	//fmt.Println("tokens", tokens, "node.token", node.token, "node.path", node.path, "node.values", node.values)
+	fmt.Println("tokens", tokens, "node.token", node.token, "node.path", node.path, "node.values", node.values)
 	if len(tokens) == 0 {
 		if node.values != nil {
 			set[node.path] = node.values
@@ -71,7 +72,7 @@ func (node *Node) mathUniq(tokens []string, set map[string][]interface{}) {
 		next.mathUniq(tokens[1:], set)
 	}
 	if next := node.findNext("#"); next != nil {
-		next.mathUniq(tokens[1:], set)
+		next.mathUniq(tokens, set)
 	}
 	if node.token == "#" {
 		if node.nextEmpty() {
