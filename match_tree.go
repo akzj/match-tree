@@ -1,19 +1,43 @@
 package match_tree
 
 import (
-	"fmt"
 	"strings"
 )
 
 type Node struct {
-	path    string
-	token   string
-	pre     *Node
-	nextMap map[string]*Node
-	values  []interface{}
+	copyOnWrite *copyOnWrite
+	path        string
+	token       string
+	nextMap     map[string]*Node
+	values      []interface{}
 }
+
+type copyOnWrite struct {
+	_ int
+}
+
+func (copyOnWrite *copyOnWrite) mutableNode(node *Node) *Node {
+	if copyOnWrite == node.copyOnWrite {
+		return node
+	}
+	copyNode := &Node{
+		copyOnWrite: copyOnWrite,
+		path:        node.path,
+		token:       node.token,
+		nextMap:     make(map[string]*Node, len(node.nextMap)),
+	}
+	for k, v := range node.nextMap {
+		copyNode.nextMap[k] = v
+	}
+	if node.values != nil {
+		copyNode.values = append(copyNode.values, node.values...)
+	}
+	return copyNode
+}
+
 type MatchTree struct {
-	root *Node
+	copyOnWrite *copyOnWrite
+	root        *Node
 }
 
 func (node *Node) appendValue(value interface{}) {
@@ -30,9 +54,13 @@ func (node *Node) RangeNext(f func(next *Node) bool) {
 func (node *Node) loadOrCreateNext(token string, path string) *Node {
 	next, ok := node.nextMap[token]
 	if ok {
+		if next.copyOnWrite != node.copyOnWrite {
+			next = node.copyOnWrite.mutableNode(next)
+			node.nextMap[token] = next
+		}
 		return next
 	}
-	next = newNode(token, path, node)
+	next = newNode(token, path, node.copyOnWrite)
 	node.nextMap[token] = next
 	return next
 }
@@ -49,55 +77,38 @@ func (node *Node) insert(tokens []string, prefix string, value interface{}) {
 	node.loadOrCreateNext(tokens[0], prefix).insert(tokens[1:], prefix, value)
 }
 
-func (node *Node) mathUniq(tokens []string, set map[string][]interface{}) {
-	fmt.Println("tokens", tokens, "node.token", node.token, "node.path", node.path, "node.values", node.values)
-	if len(tokens) == 0 {
+func (node *Node) match(token, remain string, set map[string][]interface{}) {
+	//fmt.Println("token", token, "remain", remain, "node.token", node.token, "node.path", node.path, "node.values", node.values)
+	if len(token) == 0 {
 		if node.values != nil {
 			set[node.path] = node.values
-		} else {
-			var last *Node
-			for next := node.findNext("#"); next != nil; next = next.findNext("#") {
-				last = next
-			}
-			if last != nil && last.values != nil {
-				set[last.path] = last.values
-			}
+		}
+		var last *Node
+		for next := node.findNext("#"); next != nil; next = next.findNext("#") {
+			last = next
+		}
+		if last != nil && last.values != nil {
+			set[last.path] = last.values
 		}
 		return
 	}
-	if next := node.findNext(tokens[0]); next != nil {
-		next.mathUniq(tokens[1:], set)
+	if next := node.findNext(token); next != nil {
+		token, remain := nextToken(remain)
+		next.match(token, remain, set)
 	}
 	if next := node.findNext("*"); next != nil {
-		next.mathUniq(tokens[1:], set)
+		token, remain := nextToken(remain)
+		next.match(token, remain, set)
 	}
 	if next := node.findNext("#"); next != nil {
-		next.mathUniq(tokens, set)
+		next.match(token, remain, set)
 	}
 	if node.token == "#" {
 		if node.nextEmpty() {
 			set[node.path] = node.values
 		} else {
-			node.mathUniq(tokens[1:], set)
-		}
-	}
-}
-
-func (node *Node) match(tokens []string, objs *[]interface{}) {
-	if len(tokens) == 0 {
-		*objs = append(*objs, node.values...)
-		return
-	}
-	for _, token := range []string{tokens[0], "*", "#"} {
-		if next := node.findNext(token); next != nil {
-			next.match(tokens[1:], objs)
-		}
-	}
-	if node.token == "#" {
-		if node.nextEmpty() {
-			*objs = append(*objs, node.values...)
-		} else {
-			node.match(tokens[1:], objs)
+			token, remain = nextToken(remain)
+			node.match(token, remain, set)
 		}
 	}
 }
@@ -111,50 +122,48 @@ func (node *Node) nextEmpty() bool {
 	return len(node.nextMap) == 0
 }
 
-func newNode(token string, path string, pre *Node) *Node {
+func (node *Node) Walk(f func(path string, objs []interface{}) bool) bool {
+	for _, next := range node.nextMap {
+		if next.values != nil {
+			if f(next.path, next.values) == false {
+				return false
+			}
+		}
+		if next.Walk(f) == false {
+			return false
+		}
+	}
+	return true
+}
+
+func newNode(token string, path string, copyOnWrite *copyOnWrite) *Node {
 	return &Node{
-		token:   token,
-		pre:     pre,
-		path:    path,
-		nextMap: map[string]*Node{},
+		token:       token,
+		copyOnWrite: copyOnWrite,
+		path:        path,
+		nextMap:     map[string]*Node{},
 	}
 }
 
 func NewMatchTree() *MatchTree {
+	copyOnWrite := new(copyOnWrite)
 	return &MatchTree{
-		root: newNode("", "", nil),
+		copyOnWrite: copyOnWrite,
+		root:        newNode("", "", copyOnWrite),
 	}
 }
 
-func (tree *MatchTree) Insert(key string, value interface{}) {
-	//tree.root.insert(tree.split(key), "", value)
-	tree.root.insert(strings.Split(key, "."), "", value)
-}
-
-func (tree *MatchTree) split(key string) []string {
-	var tmp []string
-	for _, token := range strings.Split(key, ".") {
-		if len(tmp) == 0 {
-			tmp = append(tmp, token)
-		} else {
-			if token == "#" && tmp[len(tmp)-1] == "#" {
-				continue
-			}
-			tmp = append(tmp, token)
-		}
-	}
-	return tmp
+func (tree *MatchTree) Insert(key string, value interface{}) *MatchTree {
+	root := tree.copyOnWrite.mutableNode(tree.root)
+	root.insert(strings.Split(key, "."), "", value)
+	tree.root = root
+	return tree
 }
 
 func (tree *MatchTree) Match(key string) []interface{} {
-	var res []interface{}
-	tree.root.match(tree.split(key), &res)
-	return res
-}
-
-func (tree *MatchTree) MatchUniq(key string) []interface{} {
 	var set = make(map[string][]interface{})
-	tree.root.mathUniq(tree.split(key), set)
+	token, remain := nextToken(key)
+	tree.root.match(token, remain, set)
 	var objs []interface{}
 	for _, values := range set {
 		objs = append(objs, values...)
@@ -162,6 +171,22 @@ func (tree *MatchTree) MatchUniq(key string) []interface{} {
 	return objs
 }
 
-func (tree *MatchTree) MatchTokenUniq(tokens []string, set map[string][]interface{}) {
-	tree.root.mathUniq(tokens, set)
+func (tree *MatchTree) Clone() *MatchTree {
+	var clone = NewMatchTree()
+	copyOnWrite := *clone.copyOnWrite
+	tree.copyOnWrite = &copyOnWrite
+	clone.root = tree.root
+	return clone
+}
+
+func (tree *MatchTree) Walk(f func(path string, objs []interface{}) bool) {
+	tree.root.Walk(f)
+}
+
+func nextToken(str string) (string, string) {
+	pos := strings.IndexByte(str, '.')
+	if pos == -1 {
+		return str, ""
+	}
+	return str[:pos], str[pos+1:]
 }
