@@ -1,6 +1,7 @@
 package match_tree
 
 import (
+	"reflect"
 	"strings"
 )
 
@@ -118,6 +119,18 @@ func (node *Node) findNext(token string) *Node {
 	return next
 }
 
+func (node *Node) mutableNext(token string) *Node {
+	next, _ := node.nextMap[token]
+	if next == nil {
+		return nil
+	}
+	if next.copyOnWrite != node.copyOnWrite {
+		next = node.copyOnWrite.mutableNode(next)
+		node.nextMap[token] = next
+	}
+	return next
+}
+
 func (node *Node) nextEmpty() bool {
 	return len(node.nextMap) == 0
 }
@@ -181,6 +194,66 @@ func (tree *MatchTree) Clone() *MatchTree {
 
 func (tree *MatchTree) Walk(f func(path string, objs []interface{}) bool) {
 	tree.root.Walk(f)
+}
+
+func objRE(first, second interface{}) bool {
+	if reflect.DeepEqual(first, second) {
+		return true
+	}
+	return first == second
+}
+
+func (tree *MatchTree) Delete(key string, obj interface{}) {
+	root := tree.copyOnWrite.mutableNode(tree.root)
+	node := root
+	var stack = []*Node{node}
+	for token, remain := nextToken(key); len(token) != 0; token, remain = nextToken(remain) {
+		node = node.mutableNext(token)
+		if node == nil {
+			return
+		}
+		stack = append(stack, node)
+	}
+	if node.path != key {
+		return
+	}
+	var find = false
+	for i, val := range node.values {
+		if objRE(val, obj) {
+			node.values = append(node.values[:i], node.values[i+1:]...)
+			find = true
+			if len(node.values) == 0 {
+				node.values = nil
+			}
+			break
+		}
+	}
+	if find == false {
+		return
+	}
+	defer func() {
+		tree.root = root
+	}()
+	if node.values == nil {
+		return
+	}
+	stackPop := func() *Node {
+		if len(stack) == 0 {
+			return nil
+		}
+		node := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		return node
+	}
+	_ = stackPop()
+	for pre := stackPop(); pre != nil; pre = stackPop() {
+		delete(pre.nextMap, node.token)
+		if len(pre.nextMap) == 0 && pre.values == nil {
+			node = pre
+		} else {
+			break
+		}
+	}
 }
 
 func nextToken(str string) (string, string) {

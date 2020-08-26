@@ -273,3 +273,64 @@ func TestCopyOnWrite(t *testing.T) {
 		return true
 	})
 }
+
+func treeWalk(tree *MatchTree) ([]string, []interface{}) {
+	var paths []string
+	var allObjs []interface{}
+	tree.Walk(func(path string, objs []interface{}) bool {
+		paths = append(paths, path)
+		allObjs = append(allObjs, objs...)
+		return true
+	})
+	return paths, allObjs
+}
+
+func TestDelete(t *testing.T) {
+	tree := NewMatchTree()
+
+	tree.Insert("1.2.3.4.5", 1)
+
+	tree.Insert("1.2.3.4.6", 2)
+
+	tree2 := tree.Clone()
+
+	tree.Delete("1.2.3.4.5", 1)
+	tree.Delete("1.2.3.4.6", 2)
+
+	path, objs := treeWalk(tree)
+	if len(path) != 0 || len(objs) != 0 {
+		t.Fatalf("delete error")
+	}
+
+	path, objs = treeWalk(tree2)
+	if len(path) != 2 || len(objs) != 2 {
+		t.Fatalf("clone error")
+	}
+}
+
+func BenchmarkInsertCoW(b *testing.B) {
+
+	rand.Seed(time.Now().Unix())
+	tree := NewMatchTree()
+	begin := time.Now()
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.N = 100000
+	for i := 0; i < b.N; i++ {
+		var key string
+		for i := 0; i < 5; i++ {
+			if len(key) != 0 {
+				key += "."
+			}
+			if rand.Int31n(50) == 1 {
+				key += "#"
+			} else {
+				str := uuid.New().String()[:1]
+				key += str
+			}
+		}
+		tree.Insert(key, i)
+		tree = tree.Clone()
+	}
+	fmt.Println(int(float64(b.N) / time.Now().Sub(begin).Seconds()))
+}
