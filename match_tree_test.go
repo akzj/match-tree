@@ -239,8 +239,12 @@ func BenchmarkMatchTree_MatchTokenUniq(b *testing.B) {
 }
 
 func TestNextToken(t *testing.T) {
-	for token, remain := nextToken("1.2.4.5.6"); len(token) != 0; token, remain = nextToken(remain) {
-		fmt.Println(token, remain)
+	var tokens []string
+	for token, remain := nextToken("1.2.3.4.5.6"); len(token) != 0; token, remain = nextToken(remain) {
+		tokens = append(tokens, token)
+	}
+	if reflect.DeepEqual(tokens, []string{"1", "2", "3", "4", "5", "6"}) == false {
+		t.Fatalf("%+v", tokens)
 	}
 }
 
@@ -248,30 +252,20 @@ func TestCopyOnWrite(t *testing.T) {
 	tree := NewMatchTree()
 
 	tree.Insert("1.2.3.4.5", 1)
-
 	tree.Insert("1.2.3.4.6", 2)
 
-	fmt.Println("---------")
-	tree.Walk(func(path string, objs []interface{}) bool {
-		fmt.Println(path, objs)
-		return true
-	})
+	if path, objs := treeWalk(tree); len(path) != 2 || len(objs) != 2 {
+		t.Fatalf("error")
+	}
 
-	tree2 := tree.Clone()
-
-	tree2.Insert("1.2.3.4.5.6.7", 3)
-
-	fmt.Println("---------")
-	tree.Walk(func(path string, objs []interface{}) bool {
-		fmt.Println(path, objs)
-		return true
-	})
-
-	fmt.Println("---------")
-	tree2.Walk(func(path string, objs []interface{}) bool {
-		fmt.Println(path, objs)
-		return true
-	})
+	clone := tree.Clone()
+	clone.Insert("1.2.3.4.5.6.7", 3)
+	if path, objs := treeWalk(tree); len(path) != 2 || len(objs) != 2 {
+		t.Fatalf("error")
+	}
+	if path, objs := treeWalk(clone); len(path) != 3 || len(objs) != 3 {
+		t.Fatalf("error")
+	}
 }
 
 func treeWalk(tree *MatchTree) ([]string, []interface{}) {
